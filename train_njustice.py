@@ -66,33 +66,43 @@ class Dataset(data.Dataset):
 class CNN(nn.Module):
     def __init__(self):
         super(CNN, self).__init__()
-        self.conv1 = nn.Conv2d(3, 35, (3, 3), stride=1, padding=1)
-        self.convnorm1 = nn.BatchNorm2d(35)
-        self.pool1 = nn.AvgPool2d((2, 2), stride=2)
-        self.conv2 = nn.Conv2d(35, 70, (3, 3), stride=1, padding=1)
-        self.convnorm2 = nn.BatchNorm2d(70)
-        self.pool2 = nn.AvgPool2d((2, 2), stride=2)
-        self.linear1 = nn.Linear(95830, 200)
-        self.linear1_bn = nn.BatchNorm1d(200)
-        self.drop = nn.Dropout(0.2)
-        self.linear2 = nn.Linear(200, 7)
-        self.act = torch.relu
+        self.layer1 = nn.Sequential(
+            nn.Conv2d(3, 16, kernel_size=5, stride=1, padding=2),
+            nn.ReLU(),
+            nn.BatchNorm2d(16),
+            nn.AvgPool2d(kernel_size=2, stride=2)
+        )
+        self.layer2 = nn.Sequential(
+            nn.Conv2d(16, 32, kernel_size=5, stride=1, padding=2),
+            nn.ReLU(),
+            nn.BatchNorm2d(32),
+            nn.AvgPool2d(kernel_size=2, stride=2)
+        )
+        self.fc = nn.Sequential(
+            nn.Linear(43808, 200),
+            nn.ReLU(),
+            nn.BatchNorm1d(200),
+            nn.Dropout(0.2),
+            nn.Linear(200, 7)
+        )
 
     def forward(self, x):
-        # print(x.size())
-        x = self.pool1(self.convnorm1(self.act(self.conv1(x))))
-        x = self.pool2(self.convnorm2(self.act(self.conv2(x))))
-        # print(x.size())
-        x = self.drop(self.linear1_bn(self.act(self.linear1(x.view(len(x), -1)))))
-        return self.linear2(x)
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.fc(x.view(len(x), -1))
+        return x
 
 
 def learn_something():
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-    transformations = transforms.Compose([transforms.ToTensor()])
+    transformations = transforms.Compose([
+        transforms.RandomHorizontalFlip(),
+        transforms.RandomVerticalFlip(),
+        transforms.ToTensor()
+    ])
     train = Dataset('Data/train/', 150, 150, transformations)
-    train_loader = data.DataLoader(dataset=train, batch_size=64, shuffle=True)
+    train_loader = data.DataLoader(dataset=train, batch_size=10, shuffle=True)
 
     test = Dataset('Data/test/', 150, 150, transforms.Compose([transforms.ToTensor()]))
     test_loader = data.DataLoader(dataset=test, batch_size=len(test), shuffle=False)
@@ -101,7 +111,7 @@ def learn_something():
     optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
     loss_fn = nn.BCEWithLogitsLoss()
 
-    for epoch in range(6):
+    for epoch in range(5):
         model.train()
         for i, (batch, batch_labels) in enumerate(train_loader):
             batch, batch_labels = batch.to(device), batch_labels.to(device)
@@ -134,3 +144,5 @@ def learn_something():
 
 
 learn_something()
+# Epoch: 5 [900/929 (97%)]	Loss: 0.494119
+# Accuracy: (1%)	Loss: 0.643302
