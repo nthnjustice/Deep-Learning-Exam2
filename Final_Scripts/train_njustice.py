@@ -7,6 +7,8 @@ from torch.utils import data
 from torchvision import transforms
 
 
+# https://stanford.edu/~shervine/blog/pytorch-how-to-generate-data-parallel
+# https://github.com/utkuozbulak/pytorch-custom-dataset-examples?fbclid=IwAR33AlaJmWrETh-BExokH4ujiffvX0LbyLgq57fj38fMQVKjhcRpoy1N20g
 class Dataset(data.Dataset):
     def __init__(self, path, width, height, transformations=None):
         self.width = width
@@ -66,29 +68,42 @@ class Dataset(data.Dataset):
 class CNN(nn.Module):
     def __init__(self):
         super(CNN, self).__init__()
+        # https://medium.com/@thevatsalsaglani/multi-class-image-classification-using-cnn-over-pytorch-and-the-basics-of-cnn-fdf425a11dc0#67ea
+        # https://www.deeplearningwizard.com/deep_learning/practical_pytorch/pytorch_convolutional_neuralnetwork/
+        # https://towardsdatascience.com/a-guide-to-an-efficient-way-to-build-neural-network-architectures-part-ii-hyper-parameter-42efca01e5d7
         self.layer1 = nn.Sequential(
-            nn.Conv2d(3, 32, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(3, 8, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.BatchNorm2d(8),
+            nn.MaxPool2d(kernel_size=2, stride=2)
+        )
+        self.layer2 = nn.Sequential(
+            nn.Conv2d(8, 16, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=1),
             nn.ReLU(),
             nn.BatchNorm2d(32),
             nn.MaxPool2d(kernel_size=2, stride=2)
         )
-        self.layer2 = nn.Sequential(
+        self.layer3 = nn.Sequential(
             nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1),
+            nn.Dropout2d(0.2),
             nn.ReLU(),
-            nn.BatchNorm2d(64),
+            nn.BatchNorm2d(128),
             nn.AvgPool2d(kernel_size=2, stride=2)
         )
         self.fc = nn.Sequential(
-            nn.Linear(40000, 400),
+            nn.Linear(41472, 500),
             nn.ReLU(),
-            nn.BatchNorm1d(400),
+            nn.BatchNorm1d(500),
             nn.Dropout(0.5),
-            nn.Linear(400, 7)
+            nn.Linear(500, 7)
         )
 
     def forward(self, x):
         x = self.layer1(x)
         x = self.layer2(x)
+        x = self.layer3(x)
         x = self.fc(x.view(len(x), -1))
 
         return x
@@ -97,13 +112,14 @@ class CNN(nn.Module):
 def train_network(model_path):
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
+    # https://www.kaggle.com/pinocookie/pytorch-dataset-and-dataloader
     transformations = transforms.Compose([
         transforms.RandomHorizontalFlip(),
         transforms.RandomVerticalFlip(),
         transforms.RandomAffine((-45, 45)),
         transforms.ToTensor()
     ])
-    train = Dataset('Data/train/', 100, 100, transformations)
+    train = Dataset('Data/train/', 150, 150, transformations)
     train_loader = data.DataLoader(dataset=train, batch_size=20, shuffle=True)
 
     model = CNN().to(device)
@@ -122,6 +138,7 @@ def train_network(model_path):
             loss.backward()
             optimizer.step()
 
+            # https://www.kaggle.com/mratsim/starting-kit-for-pytorch-deep-learning?fbclid=IwAR2eluMI33VNjQ8c0wNRSrkRx9BM1v7v1ypDi1alN5OMM9bZZGtgu5zdoYQ
             if i % 1 == 0:
                 size = i * len(batch)
                 total = len(train)
@@ -135,13 +152,15 @@ def train_network(model_path):
 def test_network(model_path):
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-    test = Dataset('Data/test/', 100, 100, transforms.Compose([transforms.ToTensor()]))
+    test = Dataset('Data/test/', 150, 150, transforms.Compose([transforms.ToTensor()]))
     test_loader = data.DataLoader(dataset=test, batch_size=len(test), shuffle=False)
 
     model = CNN().to(device)
     model.load_state_dict(torch.load(model_path))
     model.eval()
 
+    # https://algorithmia.com/blog/convolutional-neural-nets-in-pytorch
+    # https://discuss.pytorch.org/t/calculating-accuracy-for-a-multi-label-classification-problem/2303/6
     for i, (batch, batch_labels) in enumerate(test_loader):
         batch, batch_labels = batch.to(device), batch_labels.to(device)
 
@@ -149,6 +168,8 @@ def test_network(model_path):
         sigmoids = torch.sigmoid(logits)
         y = (sigmoids > 0.5).float()
 
+        # https://stackoverflow.com/questions/32996281/how-to-check-if-two-torch-tensors-or-matrices-are-equal
+        # https://github.com/yunjey/pytorch-tutorial/blob/master/tutorials/02-intermediate/convolutional_neural_network/main.py
         pct = torch.sum(torch.eq(y, batch_labels)).item() / y.nelement() * 100
         loss = nn.BCELoss()
         loss = loss(y, batch_labels)
